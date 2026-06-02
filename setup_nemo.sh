@@ -77,6 +77,9 @@ PYEOF
 echo "=== Pinning torch version ==="
 pip install --no-cache-dir torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 2>&1 | tail -3
 
+echo "=== Patching nvJitLink (FIXES nvvmAddNVVMContainerToProgram ERROR) ==="
+pip install --no-cache-dir nvidia-nvjitlink-cu12==12.8.93 2>&1 | tail -1
+
 echo "=== Cloning NeMo repo ==="
 git clone --depth 1 https://github.com/NVIDIA/NeMo /opt/NeMo 2>&1 | tail -1
 

@@ -1,5 +1,36 @@
 # Agent Instructions: Fine-Tune Parakeet 0.6B on Voice Samples
 
+## Session Summary (2026-06-03) — Malay Language Fine-Tuning
+
+### What We Accomplished
+1. **Discovered and fixed nvjitlink bug** — `numba-cuda 0.30.2` TDT loss JIT compilation fails on ALL GPUs after torch pinning downgrades `nvidia-nvjitlink-cu12` to 12.4. Fix: upgrade back to 12.8.93.
+2. **Started Malay fine-tuning on FLEURS** — 9.5h Malay speech (2,667 train / 324 val / 749 test), CC-BY-4.0 license
+3. **Proven GPU**: Tesla V100 (SM 7.0, 32GB VRAM) works, RTX 4060 Ti & RTX 3090 also work after nvjitlink fix
+4. **Training speed**: ~1 step/sec on V100, ~20 min/epoch for 9.5h dataset, ~$1.30 for 10 epochs
+
+### Key Findings
+- **nvjitlink fix is CRITICAL** — Without `pip install nvidia-nvjitlink-cu12==12.8.93` after torch pinning, training crashes on step 0 with `nvvmAddNVVMContainerToProgram` error on ALL GPU types
+- **NGC container SSH fails** on vast.ai — pip path + `setup_nemo.sh` is the reliable approach
+- **FLEURS data is plug-and-play** — Download with `datasets`, convert with `sox`, create JSONL manifest
+- **9.5h is viable for fine-tuning** — Not overkill, not too little. Test on 50 samples to verify WER change.
+
+### Cost Reference (Malay Fine-Tune)
+| Item | Time | Cost |
+|---|---|---|
+| Setup (deps + NeMo + patches + nvjitlink fix) | ~15 min | ~$0.09 |
+| FLEURS data download + conversion | ~5 min | ~$0.03 |
+| Fine-tune 10 epochs (9.5h data) | ~3.5 h | ~$1.26 |
+| **Total** | **~4 h** | **~$1.40** |
+
+### Known Issue: nvJitLink `nvvmAddNVVMContainerToProgram`
+**Symptom**: Training crashes at step 0 with `cuda.bindings.nvjitlink.nvJitLinkError: ERROR_INTERNAL (6)` and `ERROR 4 in nvvmAddNVVMContainerToProgram`
+**Root cause**: `pip install nemo-toolkit[all,cu12]` pulls `cuda-bindings 12.9.x` which installs `nvidia-nvjitlink-cu12 12.8.x`. Pinning `torch==2.6.0` downgrades nvjitlink to 12.4.x, which is too old for cuda-bindings 12.9.x.
+**Fix**: After torch pinning, run `pip install nvidia-nvjitlink-cu12==12.8.93`
+**Affected GPUs**: ALL (RTX 4060 Ti, RTX 3090, V100, etc.) — it's a CUDA library version mismatch, not GPU-specific.
+**NGC container**: The official `nvcr.io/nvidia/nemo:26.02` avoids this entirely by having all CUDA deps pre-matched, but SSH fails on vast.ai.
+
+---
+
 ## Session Summary (2026-06-02)
 
 ### What We Accomplished
@@ -40,18 +71,23 @@ Fine-tune `nvidia/parakeet-tdt-0.6b-v3` on Kim's 81 voice samples (6.7 min Engli
 - Building Docker images locally — colima takes 50GB, qemu x86 emulation is painfully slow
 - GitHub Actions Docker builds — NeMo is too heavy for free runners
 - NVIDIA NeMo container on slow vast.ai hosts — 15GB pull takes 20+ minutes and times out
+- **NGC container SSH** — `nvcr.io/nvidia/nemo:26.02` SSH key injection fails on vast.ai (publickey denied). Use the pip + `setup_nemo.sh` path instead.
 - **Building Docker images on vast.ai instances** — no Docker daemon access, can't commit containers
 - **Fine-tuning with LR=1e-5 on 81 samples** — causes hallucinations (Russian/French/gibberish)
 - **Fine-tuning more than 20 epochs on small datasets** — overfitting, WER plateaus
+- **numba-cuda 0.30.2 + torch 2.6.0 nvjitlink mismatch** — `nvJitLinkError: ERROR_INTERNAL (6), nvvmAddNVVMContainerToProgram` on ALL GPUs (RTX 4060Ti, RTX 3090, V100). Root cause: torch pinning downgrades `nvidia-nvjitlink-cu12` from 12.8 to 12.4, which is too old for `cuda-bindings 12.9.x` pulled by NeMo.
 
 ### What WORKS
 - `pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime` — should match PyTorch 2.6 requirement
-- OR `nvcr.io/nvidia/nemo:26.02` — official container, EVERYTHING pre-configured
+- OR `nvcr.io/nvidia/nemo:26.02` — official container, EVERYTHING pre-configured (but SSH fails on vast.ai)
 - Fast datacenter vast.ai hosts (Czechia Tesla T4: offer 13080908, 8895 Mbps, 99.94% reliability)
 - `pip install 'nemo-toolkit[all,cu12]'` — NVIDIA's recommended install that handles CUDA deps
 - **Learning rate 1e-7** — stable training, no hallucinations on small datasets
-- **setup_nemo.sh script** — instant environment setup with all 10 patches applied
+- **setup_nemo.sh script** — instant environment setup with all 10 patches + nvjitlink fix applied
 - **Stopping training at epoch 11-20** — best WER before overfitting kicks in
+- **Upgrading nvjitlink after torch pinning** — `pip install nvidia-nvjitlink-cu12==12.8.93` fixes the `nvJitLinkError: ERROR_INTERNAL (6)` that breaks TDT loss JIT compilation on ALL GPUs
+- **Tesla V100 GPU** — 32GB VRAM, SM 7.0, reliable on vast.ai ($0.36/hr)
+- **FLEURS Malay (ms_my)** — 9.5h clean Malay speech data, train/val/test pre-split, CC-BY-4.0 license
 
 ## Budget
 - **$0.89 remaining** on vast.ai (as of 2026-06-02)
